@@ -1,7 +1,6 @@
 Project title: Cumulative adverse childhood experiences (ACEs) and cardiometabolic diseases in later life.
 
-This repository contains R documentation for this study to test associations between cumulative childhood adversity and cardiometabolic diseases using colombian aging data (SABE-2015):
-Researcu question: is there childhood adversity associate cardiometabolic events in aulthood?
+This repository contains R documentation for this study to test associations between cumulative childhood adversity and cardiometabolic diseases using colombian aging data (SABE-2015). Research question: is there childhood adversity associated with cardiometabolic events in adulthood?
 
 Structure and organization:
 
