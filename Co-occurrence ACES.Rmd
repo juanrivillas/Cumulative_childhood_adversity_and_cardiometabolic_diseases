@@ -1,0 +1,679 @@
+---
+title: "Co-occurrence of Adverse Childhood Experiences (ACE) and cardiometabolic health"
+author: "Juan Carlos Rivillas"
+date: "03/03/2023"
+---
+
+Code walkthrough of calculation of co-occurrence of ACE and association ACE and cardiometabolic health using single and ACE score 
+as per the article "Adverse Childhood Experiences and Adult Cardiometabolic Health in Colombia."
+
+This R code includes: i) Descriptive and correlation analysis ACE, ii) estimation adjusted Odd Ratios for confounders (ACE -> diseases),
+and iii) sensitivity analysis. 
+
+Exposures: Adverse Childhood Experiences (ACE)
+Outcomes: cardiovascular diseases, diabetes, hypertension, and obesity.
+Disaggregation: All analyses were disaggregated by sex.
+Adjusted covariates: age and ethnicity
+
+##################################################################################
+#####################    PREPARE DATA ACES-DISEASES PAPER 2   ####################
+##################################################################################
+
+#Step 1: Preparing data for analysis
+```{r cars}
+#Load the necessary libraries for the analysis
+install.packages ('rio') #Uploading a dataset
+library(rio)
+
+install.packages ('readxl')
+library(readxl)
+
+install.packages('table1') #Tools for the Analysis of Epidemiological Data
+library(table1)
+
+install.packages('epiR') 
+library(epiR)
+
+install.packages('DescTools') #Cochran Armitage Test for trends
+library(DescTools)
+
+install.packages('car')
+library(car)
+
+install.packages('magrittr') #Pipeline Operator "%>% to chain multiple operations together
+library(magrittr)
+
+install.packages('compareGroups') 
+library(compareGroups)
+
+install.packages('ggstatsplot') #Correlations matrix and plots
+library(ggstatsplot)
+
+install.packages ('networkD3')
+library(networkD3)
+
+# install.packages("devtools")
+devtools::install_github("r-lib/conflicted")
+
+install.packages("finalfit")
+library(finalfit)
+
+library(dplyr) #Logistic regression by exposure-outcome-sex
+
+install.packages("sjPlot") #Summary of regression Models as HTML
+library(sjPlot)             
+library(sjmisc)
+library(sjlabelled)
+library(table1)
+```
+
+#We’ll use the SABE aging population survey dataset. This dataset contains the following information about 18,044 individuals:
+```{r}
+#load datasets
+pathways_final #Dataset with 18,044 individuals
+tetrachoric_correlation1
+dfcase_complete #SABE subsample with 2,813 individuals (sensitivity analysis)
+
+#view summary of dataset
+summary(pathways_final)
+
+#find total observations in dataset
+nrow(pathways_final)
+```
+#Split data by sex (To explore sex differences)
+```{r}
+data_female <- pathways_final %>% filter(sex == "Female")
+data_male <- pathways_final %>% filter(sex == "Male")
+```
+
+#Save two datasets males and females (Otherwise both databases are already uplodaded on GitHub)
+```{r}
+writexl::write_xlsx( x = data_male, path =  '/Users/macbookpro/Documents/PhD Project/Data/SABE/dataframes/data_male.xlsx' )
+writexl::write_xlsx( x = data_female, path =  '/Users/macbookpro/Documents/PhD Project/Data/SABE/dataframes/data_female.xlsx' )
+```
+
+#Step 2: Missingness analysis: check names columns, number of observations, n missing values, completed rates, and type of data (caracter or numeric) in the datframe.
+```{r }
+skimr::skim(pathways_final)
+skimr::skim(data_female)
+skimr::skim(data_male)
+```
+
+
+##################################################################################
+#####################DESCRIPTIVE ANALYSIS ACES-DISEASES PAPER 2####################
+##################################################################################
+
+#Step3: Descriptive analysis - Analysis Individual ACEs
+```{r}
+#Extract descriptive data
+table_2 <-table1 (~age + ethnic_group + emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + HTA + CVD + Diabetes + Obesity + aces_score + Low_childhood_sep | sex, data=pathways_final)
+
+table_2
+```
+
+
+#Descriptive analysis - Analysis of co-occurence ACES (ACEs score)
+
+#Explore co-occurring ACE using correlation matrix
+```{r}
+## as a default this function outputs a correlation matrix plot
+ggcorrmat(
+  data     = tetrachoric_correlation1,
+  colors   = c("#B2182B", "white", "#4D4D4D"),
+  title    = "Descriptive co-occurrence of childhood adversities ",
+  subtitle = "Tetrachroric correlation using a correlalogram"
+)
+```
+
+#Create a new category with four levels:
+ACE 0: No exposed to any childhood adversity
+ACE 1: Exposed single childhood adversity
+ACE 2: Exposed to two childhood adversity
+ACE 3: Exposed to three childhood adversity
+ACE 4+:Exposed to more than four childhood adversity
+
+```{r}
+pathways_final$ACE_score <- pathways_final$childhood_migration.x + pathways_final$emotional_abuse.x + pathways_final$poor_health2 + pathways_final$neglected_food + pathways_final$household_violence + pathways_final$early_infection.x
+
+#create a vector ACE score (Sum of single ACE)
+pathways_final$ACE_score <- factor(pathways_final$ACE_score,
+                levels = c("0","1","2","3","4","5","6"),
+                labels = c("ACE 0","ACE 1", "ACE 2","ACE 3", "ACE 4+","ACE 4+", "ACE 4+"))
+
+Desc(pathways_final$ACE_score)
+```
+
+#Check summary of results by groups of 'aces_score'
+```{r}
+test_compare2 <- compareGroups( data = pathways_final, 
+               formula = ACE_score  ~ 
+               emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + Low_childhood_sep)
+test_compare2 
+
+test_table5 <- createTable( test_compare2, show.ci = TRUE )
+test_table5
+```
+```
+
+#Step 4: Descriptive analysis - ACE variables and diseases (Overall population)
+#Generate tables with n, percentages by diseases and p values
+```{r}
+#Cardiovascular diseases by ACE
+test_compare3 <- compareGroups( data = pathways_final, 
+               formula = CVD  ~ 
+               emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + ACE_score + Low_childhood_sep)
+
+test_compare3 
+test_table3 <- createTable(test_compare3, show.ci = TRUE)
+test_table3
+```
+
+
+```{r}
+#Diabetes by ACE
+test_compare4 <- compareGroups( data = pathways_final, 
+               formula = Diabetes  ~ 
+               emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + ACE_score + Low_childhood_sep)
+
+test_compare4 
+test_table4 <- createTable( test_compare4, show.ci = TRUE )
+test_table4
+```
+
+
+```{r}
+#Hypertension by ACE
+test_compare5 <- compareGroups( data = pathways_final, 
+               formula = HTA  ~ 
+               emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + ACE_score + Low_childhood_sep)
+
+test_compare5 
+test_table5 <- createTable( test_compare5, show.ci = TRUE )
+test_table5
+```
+
+
+```{r}
+#Obesity by ACE
+test_compare1 <- compareGroups( data = pathways_final, 
+               formula = Obesity  ~ 
+               emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + ACE_score + Low_childhood_sep)
+
+test_compare1 
+test_table1 <- createTable( test_compare1, show.ci = TRUE )
+test_table1
+```
+
+
+##################################################################################
+############## LOGISTIC REGRESSION ANALYSIS ACES-DISEASES PAPER 2 ################
+##################################################################################
+
+#We use childhood adversity and adult diseases to build a logistic regression models that predicts the probability that a given individual develop cardiovascular diseases, diabetes, hypertension, or obesity in adulthood.
+
+#Step 5: Build logistic regression models, tables and plots.
+
+#Change to ordinary factor for the regressions in the three datasets
+```{r}
+#Overall population dataset
+pathways_final$Obesity = as.factor(pathways_final$Obesity)
+pathways_final$HTA      = as.factor(pathways_final$HTA)
+pathways_final$Diabetes = as.factor(pathways_final$Diabetes)
+pathways_final$CVD      = as.factor(pathways_final$CVD)
+
+pathways_final$sex2     = as.factor(pathways_final$sex2)
+pathways_final$ACEs2    = as.factor(pathways_final$ACEs2)
+pathways_final$ethnic_group2   = as.factor(pathways_final$ethnic_group2)
+pathways_final$aces_score   = as.factor(pathways_final$aces_score)
+pathways_final$ACE_score   = as.factor(pathways_final$ACE_score)
+```                         
+
+#Change to factor for the regressions
+```{r}
+#Females dataset
+data_female$Obesity = as.factor(data_female$Obesity)
+data_female$HTA      = as.factor(data_female$HTA)
+data_female$Diabetes = as.factor(data_female$Diabetes)
+data_female$CVD      = as.factor(data_female$CVD)
+
+data_female$sex2     = as.factor(data_female$sex2)
+data_female$ACEs2    = as.factor(data_female$ACEs2)
+data_female$ethnic_group2   = as.factor(data_female$ethnic_group2)
+data_female$aces_score   = as.factor(data_female$aces_score)
+data_female$ACE_score   = as.factor(data_female$ACE_score)
+```                         
+                         
+#Change to factor for the regressions 
+```{r}
+#Males dataset
+data_male$Obesity  = as.factor(data_male$Obesity)
+data_male$HTA      = as.factor(data_male$HTA)
+data_male$Diabetes = as.factor(data_male$Diabetes)
+data_male$CVD      = as.factor(data_male$CVD)
+
+data_male$sex2     = as.factor(data_male$sex2)
+data_male$ACEs2    = as.factor(data_male$ACEs2)
+data_male$ethnic_group2   = as.factor(data_male$ethnic_group2)
+data_male$aces_score   = as.factor(data_male$aces_score)
+data_male$ACE_score   = as.factor(data_male$ACE_score)
+```
+
+#To avoid re-parametizer logictis models, we change the reference category using relevel (putting always reference the wealthiest groups)  
+```{r}
+#Overall population dataset
+pathways_final <- within (pathways_final, ACEs2 <- relevel (ACEs2, ref = '1'))
+pathways_final <- within (pathways_final, sex2 <- relevel (sex2, ref = '1'))
+pathways_final <- within (pathways_final, ethnic_group2 <- relevel (ethnic_group2, ref = '1'))
+pathways_final <- within (pathways_final, aces_score <- relevel (aces_score, ref = '1'))
+pathways_final <- within (pathways_final, ACE_score <- relevel (ACE_score, ref = 'ACE 0'))
+
+table(pathways_final$ACEs2)
+table(pathways_final$sex2)
+table(pathways_final$ethnic_group2)
+table(pathways_final$aces_score)
+```
+
+
+```{r}
+#Males dataset
+data_female <- within (data_female, ACEs2 <- relevel (ACEs2, ref = '1'))
+data_female <- within (data_female, ethnic_group2 <- relevel (ethnic_group2, ref = '1'))
+data_female <- within (data_female, aces_score <- relevel (aces_score, ref = '1'))
+data_female <- within (data_female, ACE_score <- relevel (ACE_score, ref = 'ACE 0'))
+
+table(data_male$ACEs2)
+table(data_male$sex2)
+table(data_male$ethnic_group2)
+table(data_male$aces_score)
+```
+
+
+```{r}
+#Females dataset
+data_male <- within (data_male, ACEs2 <- relevel (ACEs2, ref = '1'))
+data_male <- within (data_male, sex2 <- relevel (sex2, ref = '1'))
+data_male <- within (data_male, ethnic_group2 <- relevel (ethnic_group2, ref = '1'))
+data_male <- within (data_male, aces_score <- relevel (aces_score, ref = '1'))
+data_male <- within (data_male, ACE_score <- relevel (ACE_score, ref = 'ACE 0'))
+
+table(data_male$ACEs2)
+table(data_male$sex2)
+table(data_male$ethnic_group2)
+table(data_male$aces_score)
+```
+
+
+#Specify explanatory variables of interest and i) generate tables with unadjusted and adjusted odd ratios and Graphics ORs
+
+#Graphics OR for overall population (we repeat same procedures in females and males data)
+```{r}
+#Overall population dataset (Cardiovascular diseases)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "CVD"
+
+pathways_final %>% or_plot(dv, iv)
+
+table2 <- pathways_final %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#Overall population dataset (Diabetes)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "Diabetes"
+
+pathways_final %>% or_plot(dv, iv)
+
+table2 <- pathways_final %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#Overall population dataset (Hypertension)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "HTA"
+
+pathways_final %>% or_plot(dv, iv)
+
+table2 <- pathways_final %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#Overall population dataset (Obesity)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "Obesity"
+
+pathways_final %>% or_plot(dv, iv)
+
+table2 <- pathways_final %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+# Repeat same procedure in the Females dataset.
+
+Graphics OR for females (we repeat same procedures in males data)
+```{r}
+# Females dataset (Cardiovascular diseases)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "CVD"
+
+data_female %>% or_plot(dv, iv)
+
+table2 <- data_female %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+# Females dataset (Diabetes)
+iv <- c("ACE_score","age","ethnic_group2")
+dv <- "Diabetes"
+
+data_female %>% or_plot(dv, iv)
+
+table2 <- data_female %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+# Females dataset (hypertension)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "HTA"
+
+data_female %>% or_plot(dv, iv)
+
+table2 <- data_female %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#Females dataset (Obesity)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "Obesity"
+
+data_female %>% or_plot(dv, iv)
+
+table2 <- data_female %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+#Graphics OR for males
+```{r}
+# Males dataset (Cardiovascular diseases)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "CVD"
+
+data_male %>% or_plot(dv, iv)
+
+table2 <- data_male %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+# Males dataset (Diabetes)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "Diabetes"
+
+data_male %>% or_plot(dv, iv)
+
+table2 <- data_male %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+# Males dataset (Hypertension)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "HTA"
+
+data_male %>% or_plot(dv, iv)
+
+table2 <- data_male %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+# Males dataset (Obesity)
+iv <- c("ACE_score","age", "ethnic_group2")
+dv <- "Obesity"
+
+data_male %>% or_plot(dv, iv)
+
+table2 <- data_male %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+#Perform a Cochran Armitage test for trend in binomial proportions across the levels of a single variable. 
+#This test is appropriate only when one variable has two levels and the other variable is ordinal. 
+#The two-level variable represents the response, and the other represents an explanatory variable with ordered levels. 
+#The null hypothesis is the hypothesis of no trend, which means that the binomial proportion is the same for all levels of the explanatory variable.
+```{r}
+tab2 <- table(pathways_final$ACE_score, pathways_final$CVD)
+CochranArmitageTest(tab2)
+
+tab1 <- table(pathways_final$ACE_score, pathways_final$Diabetes)
+CochranArmitageTest(tab1)
+
+tab3 <- table(pathways_final$ACE_score, pathways_final$HTA)
+CochranArmitageTest(tab3)
+
+tab4 <- table(pathways_final$ACE_score, pathways_final$Obesity)
+CochranArmitageTest(tab4)
+```
+
+
+Perform a Cochran Armitage test for trend in binomial proportions across the levels of a single variable. The null hypothesis is the hypothesis of no trend, which means that the binomial proportion is the same for all levels of the explanatory variable.
+```{r}
+tab2 <- table(data_female$ACE_score, data_female$CVD)
+CochranArmitageTest(tab2)
+
+tab1 <- table(data_female$ACE_score, data_female$Diabetes)
+CochranArmitageTest(tab1)
+
+tab3 <- table(data_female$ACE_score, data_female$HTA)
+CochranArmitageTest(tab3)
+
+tab4 <- table(data_female$ACE_score, data_female$Obesity)
+CochranArmitageTest(tab4)
+```
+
+
+```{r}
+tab8 <- table(data_male$ACE_score, data_male$Diabetes)
+CochranArmitageTest(tab8)
+
+tab5 <- table(data_male$ACE_score, data_male$CVD)
+CochranArmitageTest(tab5)
+
+tab6 <- table(data_male$ACE_score, data_male$HTA)
+CochranArmitageTest(tab6)
+
+tab7 <- table(data_male$ACE_score, data_male$Obesity)
+CochranArmitageTest(tab7)
+```
+
+
+#Step 6: Sensitivity analysis
+
+#Missingness analysi in the datframe.
+```{r }
+skimr::skim(dfcase_complete)
+```
+
+
+#Descriptive analysis - Analysis Individual ACEs
+```{r}
+#Extract descriptive data
+table_a <-table1 (~ethnic_group + emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + HTA + CVD + Diabetes + Obesity + Low_childhood_sep | sex, data=dfcase_complete)
+
+table_a
+```
+
+
+#Create a new category with four levels:
+```{r}
+dfcase_complete$ACE_score <- dfcase_complete$childhood_migration.x + dfcase_complete$emotional_abuse.x + dfcase_complete$poor_childhood_health.x + dfcase_complete$poor_food_environment.x + dfcase_complete$domestic_violence.x + dfcase_complete$early_infection.x
+
+#create a vector ACE score (Sum of single ACE)
+dfcase_complete$ACE_score <- factor(dfcase_complete$ACE_score,
+                levels = c("0","1","2","3","4","5","6"),
+                labels = c("ACE 0","ACE 1", "ACE 2","ACE 3", "ACE 4+","ACE 4+", "ACE 4+"))
+
+Desc(dfcase_complete$ACE_score)
+```
+
+
+#Analysis co-occurence ACEs
+```{r}
+test_compare2 <- compareGroups( data = dfcase_complete, 
+               formula = ACE_score  ~ 
+               emotional_abuse + poor_food_environment + poor_childhood_health + domestic_violence + childhood_migration + early_infection + Low_childhood_sep)
+test_compare2 
+
+test_table5 <- createTable( test_compare2, show.ci = TRUE )
+test_table5
+```
+
+
+#Build logistic regression models, tables and plots.
+#Change to ordinary factor for the regressions in the three datasets
+```{r}
+#Overall population dataset
+dfcase_complete$age = as.factor(dfcase_complete$age)
+
+dfcase_complete$CVD      = as.factor(dfcase_complete$CVD)
+dfcase_complete$HTA      = as.factor(dfcase_complete$HTA)
+dfcase_complete$Diabetes = as.factor(dfcase_complete$Diabetes)
+dfcase_complete$Obesity = as.factor(dfcase_complete$Obesity)
+
+dfcase_complete$gender     = as.factor(dfcase_complete$gender)
+dfcase_complete$ethnic_group   = as.factor(dfcase_complete$ethnic_group)
+dfcase_complete$ACE_score   = as.factor(dfcase_complete$ACE_score)
+```                         
+
+#To avoid re-parametizer logictis models, we change the reference category using relevel (putting always reference the wealthiest groups)  
+```{r}
+#Overall population dataset
+dfcase_complete <- within (dfcase_complete, gender <- relevel (gender, ref = '1'))
+dfcase_complete <- within (dfcase_complete, ethnic_group <- relevel (ethnic_group, ref = 'white'))
+dfcase_complete <- within (dfcase_complete, ACE_score <- relevel (ACE_score, ref = 'ACE 0'))
+
+table(dfcase_complete$gender)
+table(dfcase_complete$ethnic_group)
+table(dfcase_complete$ACE_score)
+```
+
+#To generate tables with unadjusted and adjusted odd ratios and Graphics ORs
+```{r}
+#SABE subsample (cardiovacular diseases)
+iv <- c("ACE_score","gender", "ethnic_group")
+dv <- "CVD"
+
+dfcase_complete %>% or_plot(dv, iv)
+
+table2 <- dfcase_complete %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#SABE subsample (Hypertension)
+iv <- c("ACE_score","sex", "ethnic_group")
+dv <- "HTA"
+
+dfcase_complete %>% or_plot(dv, iv)
+
+table2 <- dfcase_complete %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#SABE subsample (Diabetes)
+iv <- c("ACE_score","gender", "ethnic_group")
+dv <- "Diabetes"
+
+dfcase_complete %>% or_plot(dv, iv)
+
+table2 <- dfcase_complete %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+```{r}
+#SABE subsample  (Obesity)
+iv <- c("ACE_score","gender", "ethnic_group")
+dv <- "Obesity"
+
+dfcase_complete %>% or_plot(dv, iv)
+
+table2 <- dfcase_complete %>%
+finalfit(dv, iv,dependent_label_prefix = "")
+
+table2
+```
+
+
+#Validation Logistic regression with sjPlot package
+```{r}
+m1 <- glm(CVD ~ ACE_score + gender + ethnic_group, data = dfcase_complete, family = binomial(logit))
+tab_model (m1)
+
+m2 <- glm(HTA ~ ACE_score + gender + ethnic_group, data = dfcase_complete, family = binomial(logit))
+tab_model (m2)
+
+m3 <- glm(Diabetes ~ ACE_score + gender + ethnic_group, data = dfcase_complete, family = binomial(logit))
+tab_model (m3)
+
+m4 <- glm(Obesity ~ ACE_score + gender + ethnic_group,data = dfcase_complete, family = binomial(logit))
+tab_model (m4)
+```
+
+###############################################################################
+########################      END     #########################################
+###############################################################################
+
+
+
